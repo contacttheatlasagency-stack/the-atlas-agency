@@ -343,7 +343,7 @@ if submit_button and destination:
             )
             
             # Appelle Gemini
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            model = genai.GenerativeModel('gemini-pro')
             response = model.generate_content(prompt_final)
             
             # Sauvegarde le résultat
