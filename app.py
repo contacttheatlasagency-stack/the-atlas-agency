@@ -83,14 +83,39 @@ body, [data-testid="stText"], [data-testid="stMarkdown"], h1, h2, h3 {
 """
 st.markdown(FRESH_DESIGN_CSS, unsafe_allow_html=True)
 
-# --- 3. SECRETS ET CONFIGURATION API ---
-try:
-    genai.configure(api_key=os.environ.get["GEMINI_API_KEY"])
-    LEMON_API_KEY = os.environ.get["LEMONSQUEEZY_API_KEY"]
-    LEMON_PRODUCT_ID = os.environ.get["LEMONSQUEEZY_PRODUCT_ID"]
-    LEMON_STORE_ID = os.environ.get["LEMONSQUEEZY_STORE_ID"]
-except Exception as e:
-    st.error(f"Erreur: Secrets non configurés. Assurez-vous d'avoir ajouté vos 4 clés (TEST) dans les Secrets Streamlit.")
+# --- 3. SECRETS ET CONFIGURATION API (Mode Debug) ---
+
+# Nous allons vérifier chaque clé une par une.
+gemini_key = os.environ.get("GEMINI_API_KEY")
+lemon_api_key = os.environ.get("LEMONSQUEEZY_API_KEY")
+lemon_product_id = os.environ.get("LEMONSQUEEZY_PRODUCT_ID")
+lemon_store_id = os.environ.get("LEMONSQUEEZY_STORE_ID")
+
+secrets_ok = True # On suppose que tout va bien
+
+if not gemini_key:
+    st.error("Erreur de Secret : 'GEMINI_API_KEY' n'a pas été trouvée. Vérifiez le nom dans les 'Secrets' de Hugging Face.")
+    secrets_ok = False
+elif not lemon_api_key:
+    st.error("Erreur de Secret : 'LEMONSQUEEZY_API_KEY' n'a pas été trouvée. Vérifiez le nom.")
+    secrets_ok = False
+elif not lemon_product_id:
+    st.error("Erreur de Secret : 'LEMONSQUEEZY_PRODUCT_ID' n'a pas été trouvé. Vérifiez le nom.")
+    secrets_ok = False
+elif not lemon_store_id:
+    st.error("Erreur de Secret : 'LEMONSQUEEZY_STORE_ID' n'a pas été trouvé. Vérifiez le nom.")
+    secrets_ok = False
+
+if secrets_ok:
+    try:
+        # Si toutes les clés sont trouvées, on configure les API
+        genai.configure(api_key=gemini_key)
+        LEMON_API_KEY = lemon_api_key
+        LEMON_PRODUCT_ID = lemon_product_id
+        LEMON_STORE_ID = lemon_store_id
+        # st.success("Secrets chargés avec succès !") # (Décommentez pour confirmer si ça marche)
+    except Exception as e:
+        st.error(f"Erreur lors de la configuration de l'API : {e}")
 
 # --- 4. PROMPT MAÎTRE (VERSION "AGENCE 5 ÉTOILES") ---
 PROMPT_MAITRE = """
@@ -233,7 +258,7 @@ col1, col2 = st.columns([1, 2]) # Formulaire à gauche (1/3), résultats à droi
 # --- COLONNE 1 : LE FORMULAIRE ---
 with col1:
     # (Remplacez ce lien par votre propre logo hébergé, ex: sur Imgur)
-    st.image("https://i.imgur.com/vHqjM8K.png", width=200) 
+    st.image("https://i.imgur.com/vHqjM8K.png", width=150) 
     st.title("The Atlas Agency") # Votre nouveau nom
     st.markdown("Your trip is locked. Fill the form to unlock Day 1.")
     
