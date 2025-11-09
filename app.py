@@ -6,7 +6,8 @@
 import streamlit as st
 import google.generativeai as genai
 import re
-import requests 
+import requests
+import os
 
 # --- 1. CONFIGURATION DE LA PAGE ---
 st.set_page_config(
@@ -84,10 +85,10 @@ st.markdown(FRESH_DESIGN_CSS, unsafe_allow_html=True)
 
 # --- 3. SECRETS ET CONFIGURATION API ---
 try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    LEMON_API_KEY = st.secrets["LEMONSQUEEZY_API_KEY"]
-    LEMON_PRODUCT_ID = st.secrets["LEMONSQUEEZY_PRODUCT_ID"]
-    LEMON_STORE_ID = st.secrets["LEMONSQUEEZY_STORE_ID"]
+    genai.configure(api_key=os.environ.get["GEMINI_API_KEY"])
+    LEMON_API_KEY = os.environ.get["LEMONSQUEEZY_API_KEY"]
+    LEMON_PRODUCT_ID = os.environ.get["LEMONSQUEEZY_PRODUCT_ID"]
+    LEMON_STORE_ID = os.environ.get["LEMONSQUEEZY_STORE_ID"]
 except Exception as e:
     st.error(f"Erreur: Secrets non configurés. Assurez-vous d'avoir ajouté vos 4 clés (TEST) dans les Secrets Streamlit.")
 
