@@ -322,7 +322,7 @@ with gr.Blocks(theme=gr.themes.Monochrome(primary_hue="indigo", secondary_hue="b
                 gr.Markdown("Vous aimez cet aperçu ? Obtenez l'itinéraire complet pour **9,99€**.")
                 
                 # !! REMPLACEZ CE LIEN par votre lien de paiement de TEST (de Lemon Squeezy) !!
-                gr.Markdown("[1. Achetez votre Clé de Licence Unique ici](https://VOTRE-BOUTIQUE.lemonsqueezy.com/buy/...)")
+                gr.Markdown("[1. Achetez votre Clé de Licence Unique ici](https://theatlas.lemonsqueezy.com/buy/02e6f077-25c7-4d31-81d6-258588ff2ca4)
                 
                 license_key_input = gr.Textbox(label="2. Collez votre clé de licence ici", placeholder="Ex: XXXX-XXXX-XXXX-XXXX", interactive=True)
                 unlock_btn = gr.Button("Déverrouiller l'itinéraire complet")
