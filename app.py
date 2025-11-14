@@ -360,4 +360,4 @@ with gr.Blocks(theme=gr.themes.Monochrome(primary_hue="indigo", secondary_hue="b
 #render fournit le port via la variable d'environnement PORT
 #Nous utilisions 7860 comme valeur par défaut si nous l'exécutons localement
 server_port = int(os.environ.get("PORT", 7860))
-demo.launch(server_name="0.0.0.0", server_port=server_port)
+demo.launch(server_name="0.0.0.0", server_port=server_port, share=True)
