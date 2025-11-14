@@ -1,4 +1,4 @@
-gradio==4.44.1
+gradio==4.29.0
 google-generativeai==0.7.1
 requests
 pydub==0.25.1
