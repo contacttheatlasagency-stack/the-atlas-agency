@@ -1,5 +1,5 @@
- # Fichier: app.py
-# LE MOTEUR FINAL (v2.1) - Utilise gr.Group pour la compatibilité
+# Fichier: app.py
+# LE MOTEUR FINAL (v2.2 - AVEC DÉBOGAGE RENDER)
 
 import gradio as gr
 import google.generativeai as genai
@@ -9,19 +9,19 @@ import re
 
 # --- 1. CONFIGURATION DES SECRETS (Lus depuis Hugging Face) ---
 try:
+    # Lit les clés au démarrage
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     LEMON_API_KEY = os.environ.get("LEMONSQUEEZY_API_KEY")
     LEMON_PRODUCT_ID = os.environ.get("LEMONSQUEEZY_PRODUCT_ID")
     LEMON_STORE_ID = os.environ.get("LEMONSQUEEZY_STORE_ID")
     
-    # <-- CORRIGÉ : Ligne supprimée !
+    # Ne configure pas l'API ici pour éviter le crash au démarrage
     # genai.configure(api_key=GEMINI_API_KEY)
-    # (Nous ne configurons pas l'API ici pour éviter un crash au démarrage)
 
 except Exception as e:
     print(f"Erreur de Secrets: {e}")
 
-# --- 2. PROMPT MAÎTRE (v2.0 - AVEC VOS NOUVELLES IDÉES) ---
+# --- 2. PROMPT MAÎTRE ---
 PROMPT_MAITRE = """
 Tu es 'Atlas', le concierge principal de "The Atlas Agency". Ta réputation repose sur la création d'itinéraires "indispensables".
 
@@ -192,8 +192,7 @@ def generate_itinerary(
 
     # 4. Gère la génération ou le déverrouillage
     try:
-        # <-- CORRIGÉ : L'API est configurée ICI, juste avant d'être utilisée.
-        # Cela évite le crash au démarrage si la clé n'est pas encore chargée.
+        # L'API est configurée ICI, juste avant d'être utilisée.
         genai.configure(api_key=GEMINI_API_KEY)
 
         # Appelle Gemini pour générer le contenu
@@ -234,40 +233,41 @@ def generate_itinerary(
             
             if is_valid:
                 # Clé VALIDE : Montre tout
-                # Sépare l'itinéraire du résumé budget
                 parts = re.split(r'(### 💰 RÉSUMÉ DU BUDGET.*)', full_itinerary, 1, re.DOTALL)
                 itinerary_part = parts[0].strip()
                 budget_summary = parts[1] if len(parts) > 1 else "Budget non calculé."
-                
-                # Sépare le Jour 1 du reste de l'itinéraire
                 jours_2_plus_match = re.search(r'(### JOUR 2 :.*)', itinerary_part, re.DOTALL)
                 reste_itinerary = jours_2_plus_match.group(1) if jours_2_plus_match else "Aucun jour supplémentaire trouvé."
-                
-                # On combine le reste ET le résumé budget
                 full_itinerary_content = reste_itinerary + "\n\n" + budget_summary
 
                 return (
-                    jour_1_text.split("### JOUR 2 :")[0].strip(), # Affiche Jour 1 seulement
+                    jour_1_text.split("### JOUR 2 :")[0].strip(),
                     jour_1_image_url,
-                    gr.Column(visible=False), # Cache la boîte de déverrouillage
-                    gr.Column(visible=True, value=full_itinerary_content) # Montre Jours 2+ ET le résumé
+                    gr.Column(visible=False), 
+                    gr.Column(visible=True, value=full_itinerary_content)
                 )
             else:
                 # Clé INVALIDE : Montre l'aperçu + erreur
                 return (
                     jour_1_text,
                     jour_1_image_url,
-                    gr.Column(visible=True, value=f"Erreur de clé: {message}"), # Montre la boîte + erreur
-                    gr.Column(visible=False) # Cache le reste
+                    gr.Column(visible=True, value=f"Erreur de clé: {message}"), 
+                    gr.Column(visible=False)
                 )
 
     except Exception as e:
-        # S'il y a une erreur avec Gemini (ex: clé API)
-        # <-- CORRIGÉ : Renvoie une erreur claire à l'utilisateur
-        if "API_KEY" in str(e).upper() or "PERMISSION_DENIED" in str(e).upper():
-             return "Error: Invalid or missing GEMINI_API_KEY. Check your environment variables on Render.", None, gr.Column(visible=False), gr.Column(visible=False)
+        # --- CORRIGÉ : Bloc de DÉBOGAGE ---
+        # Affiche un message clair au lieu de crasher l'interface
+        key_value = os.environ.get("GEMINI_API_KEY")
+        
+        debug_message = ""
+        if key_value:
+            debug_message = "Erreur: La clé API existe mais est INVALIDE. Vérifiez la valeur de votre clé Gemini sur Render."
         else:
-            return f"Error: {e}", None, gr.Column(visible=False), gr.Column(visible=False)
+            debug_message = "Erreur: GEMINI_API_KEY est INTROUVABLE ou VIDE. Vérifiez vos variables d'environnement sur Render. Assurez-vous que le nom de la clé est exact."
+        
+        # Renvoie le message de débogage à l'utilisateur dans la boîte de sortie
+        return debug_message, None, gr.Column(visible=False), gr.Column(visible=False)
 
 
 # --- 5. L'INTERFACE UTILISATEUR (CORRIGÉE AVEC gr.Group) ---
@@ -322,7 +322,6 @@ with gr.Blocks(theme=gr.themes.Monochrome(primary_hue="indigo", secondary_hue="b
         with gr.Column(scale=2):
             gr.Markdown("### 2. Votre Itinéraire")
             
-            # --- CORRIGÉ : gr.Box() remplacé par gr.Group() ---
             with gr.Group():
                 gr.Markdown("#### ✨ Aperçu Gratuit (Jour 1)")
                 jour_1_output = gr.Markdown("Remplissez le formulaire et cliquez sur 'Générer' pour voir votre Jour 1 ici.")
@@ -332,7 +331,6 @@ with gr.Blocks(theme=gr.themes.Monochrome(primary_hue="indigo", secondary_hue="b
                 gr.Markdown("--- \n ### 🔒 Déverrouillez la suite !")
                 gr.Markdown("Vous aimez cet aperçu ? Obtenez l'itinéraire complet pour **9,99€**.")
                 
-                # !! REMPLACEZ CE LIEN par votre lien de paiement de TEST (de Lemon Squeezy) !!
                 gr.Markdown("[1. Achetez votre Clé de Licence Unique ici](https://theatlas.lemonsqueezy.com/buy/02e6f077-25c7-4d31-81d6-258588ff2ca4)")
                 
                 license_key_input = gr.Textbox(label="2. Collez votre clé de licence ici", placeholder="Ex: XXXX-XXXX-XXXX-XXXX", interactive=True)
@@ -372,5 +370,5 @@ with gr.Blocks(theme=gr.themes.Monochrome(primary_hue="indigo", secondary_hue="b
 #Nous utilisions 7860 comme valeur par défaut si nous l'exécutons localement
 server_port = int(os.environ.get("PORT", 7860))
 
-# <-- CORRIGÉ : 'serveur_port' (français) remplacé par 'server_port' (anglais)
+# 'serveur_port' (français) remplacé par 'server_port' (anglais) + share=True
 demo.launch(server_name="0.0.0.0", server_port=server_port, share=True)
