@@ -1,4 +1,4 @@
-# Fichier: app.py
+ # Fichier: app.py
 # LE MOTEUR FINAL (v2.1) - Utilise gr.Group pour la compatibilité
 
 import gradio as gr
@@ -14,7 +14,10 @@ try:
     LEMON_PRODUCT_ID = os.environ.get("LEMONSQUEEZY_PRODUCT_ID")
     LEMON_STORE_ID = os.environ.get("LEMONSQUEEZY_STORE_ID")
     
-    genai.configure(api_key=GEMINI_API_KEY)
+    # <-- CORRIGÉ : Ligne supprimée !
+    # genai.configure(api_key=GEMINI_API_KEY)
+    # (Nous ne configurons pas l'API ici pour éviter un crash au démarrage)
+
 except Exception as e:
     print(f"Erreur de Secrets: {e}")
 
@@ -189,6 +192,10 @@ def generate_itinerary(
 
     # 4. Gère la génération ou le déverrouillage
     try:
+        # <-- CORRIGÉ : L'API est configurée ICI, juste avant d'être utilisée.
+        # Cela évite le crash au démarrage si la clé n'est pas encore chargée.
+        genai.configure(api_key=GEMINI_API_KEY)
+
         # Appelle Gemini pour générer le contenu
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
         prompt_final = PROMPT_MAITRE.format(
@@ -256,7 +263,11 @@ def generate_itinerary(
 
     except Exception as e:
         # S'il y a une erreur avec Gemini (ex: clé API)
-        return str(e), None, gr.Column(visible=False), gr.Column(visible=False)
+        # <-- CORRIGÉ : Renvoie une erreur claire à l'utilisateur
+        if "API_KEY" in str(e).upper() or "PERMISSION_DENIED" in str(e).upper():
+             return "Error: Invalid or missing GEMINI_API_KEY. Check your environment variables on Render.", None, gr.Column(visible=False), gr.Column(visible=False)
+        else:
+            return f"Error: {e}", None, gr.Column(visible=False), gr.Column(visible=False)
 
 
 # --- 5. L'INTERFACE UTILISATEUR (CORRIGÉE AVEC gr.Group) ---
@@ -360,4 +371,6 @@ with gr.Blocks(theme=gr.themes.Monochrome(primary_hue="indigo", secondary_hue="b
 #render fournit le port via la variable d'environnement PORT
 #Nous utilisions 7860 comme valeur par défaut si nous l'exécutons localement
 server_port = int(os.environ.get("PORT", 7860))
+
+# <-- CORRIGÉ : 'serveur_port' (français) remplacé par 'server_port' (anglais)
 demo.launch(server_name="0.0.0.0", server_port=server_port, share=True)
