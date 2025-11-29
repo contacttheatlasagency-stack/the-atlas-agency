@@ -1,5 +1,5 @@
-gradio
+gradio>=5.0
 openai
 requests
 pydub
-huggingface_hub
+huggingface_hub>=0.25.0
