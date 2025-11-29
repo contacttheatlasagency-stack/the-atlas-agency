@@ -1,5 +1,5 @@
 gradio==4.29.0
-openai
+openai==1.55.3
 requests
 pydub==0.25.1
 huggingface_hub==0.20.3
