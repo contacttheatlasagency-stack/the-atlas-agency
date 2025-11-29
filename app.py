@@ -1,5 +1,5 @@
 # Fichier: app.py
-# LE MOTEUR FINAL (v2.2 - AVEC DÉBOGAGE RENDER)
+# LE MOTEUR FINAL (v3.1 - FIX UI & ENFANTS)
 
 import gradio as gr
 import google.generativeai as genai
@@ -7,368 +7,231 @@ import requests
 import os
 import re
 
-# --- 1. CONFIGURATION DES SECRETS (Lus depuis Hugging Face) ---
+# --- 1. CONFIGURATION DES SECRETS ---
 try:
-    # Lit les clés au démarrage
+    # On lit les variables, mais on ne configure PAS l'API ici pour éviter le crash au démarrage
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     LEMON_API_KEY = os.environ.get("LEMONSQUEEZY_API_KEY")
     LEMON_PRODUCT_ID = os.environ.get("LEMONSQUEEZY_PRODUCT_ID")
     LEMON_STORE_ID = os.environ.get("LEMONSQUEEZY_STORE_ID")
-    
-    # Ne configure pas l'API ici pour éviter le crash au démarrage
-    # genai.configure(api_key=GEMINI_API_KEY)
-
 except Exception as e:
-    print(f"Erreur de Secrets: {e}")
+    print(f"Erreur de lecture des variables: {e}")
 
-# --- 2. PROMPT MAÎTRE ---
+# --- 2. PROMPT MAÎTRE (OPTIMISÉ GEMINI PRO) ---
 PROMPT_MAITRE = """
-Tu es 'Atlas', le concierge principal de "The Atlas Agency". Ta réputation repose sur la création d'itinéraires "indispensables".
+Tu es 'Atlas', le concierge de luxe de "The Atlas Agency". Tu crées des itinéraires de voyage hyper-détaillés et réalistes.
 
-MÉTA-RÈGLES CRUCIALES :
-1.  **RÈGLE DE RYTHME (LA DURÉE) :** Analyse la `{duree}` totale. 
-    * **Si 8+ jours (Long) :** Tu DOIS inclure des "Journées libres / repos" et des "Excursions d'une journée" (day trips) pour éviter l'ennui.
-2.  **RÈGLE D'AUTHENTICITÉ (LANGUE LOCALE) :**
-    * Tu dois simuler une recherche en langue locale pour trouver les vrais "joyaux cachés" et éviter les pièges à touristes.
-3.  **RÈGLE D'ADAPTATION (NOUVEAU) :**
-    * **Si `{van_life}` est 'Oui' :** NE PAS suggérer d'hôtels. Suggérer des spots de van, des campings, et des points d'eau. Les "liens pratiques" doivent pointer vers des parkings ou des aires de service.
-    * **Si `{children_under_11}` est 'Oui' :** Toutes les activités (matin, après-midi) et les restaurants DOIVENT être adaptés aux familles et aux jeunes enfants.
-    * **Point d'arrivée :** Le "Jour 1" DOIT commencer logiquement depuis `{arrival_point}` (ex: "Depuis l'aéroport, prenez le train RER B...").
-
----
-INSTRUCTIONS CLIENT :
+DONNÉES CLIENT :
 - Destination : {destination}
 - Durée : {duree} jours
-- Nombre de personnes : {persons}
-- Enfants de moins de 11 ans : {children_under_11}
-- Point d'arrivée (Gare/Aéroport/Adresse) : {arrival_point}
-- Voyage en Van / Camping-car : {van_life}
-- Budget (Général) : {budget}
-- Intérêts principaux : {interets}
-- Logistique & Rythme : {logistics}
-- Contraintes Spécifiques : {specific_constraints}
-- LANGUE FINALE : {langue}
----
+- Groupe : {persons} adultes + {children_count} enfants.
+- Arrivée : {arrival_point}
+- Mode Van Life : {van_life}
+- Budget : {budget}
+- Intérêts : {interets}
+- Rythme : {logistics}
+- Contraintes : {specific_constraints}
+- Langue de réponse : {langue}
 
-MISSION :
-Génère l'itinéraire complet. La structure Markdown est OBLIGATOIRE.
+RÈGLES STRICTES :
+1. **Van Life :** Si "{van_life}" est "Oui", ignore les hôtels. Trouve des spots de nuit (camping, aires nature) précis.
+2. **Enfants :** Si il y a des enfants ({children_count} > 0), le rythme doit être adapté. Si enfants en bas âge, prévoir des parcs et pauses.
+3. **Réalisme :** Ne bourre pas les journées. Prends en compte les temps de trajet.
 
-### JOUR 1 : [Titre thématique, DANS LA LANGUE {langue}]
-- 📷 **Image :** [Mots-clés en ANGLAIS pour Unsplash]
+STRUCTURE REQUISE (MARKDOWN) :
 
-- ☀️ **Matin :**
-    - **Activité :** [Description adaptée aux enfants/van si nécessaire.]
-    - **Le "Pourquoi" :** [Conseil d'initié/local.]
-    - **Logistique :** [Temps sur place ET prix d'entrée (pour {persons} personnes).]
-    - **Lien Pratique :** [Fournis un lien de recherche Google Maps pour le lieu. Ex: "http://googleusercontent.com/maps/api/staticmap"]
+### JOUR 1 : [Titre du jour]
+- 📷 **Image :** [Mots-clés ANGLAIS pour la photo]
 
-- 🍽️ **Midi :**
-    - **Recommandation :** [Restaurant (adapté aux enfants si nécessaire).]
-    - **Le "Pourquoi" :** [Pourquoi ce choix.]
-    - **Logistique :** [Budget approx. pour {persons} personnes.]
-    - **Lien Pratique :** [Lien Google Maps.]
+- ☀️ **Matin (09:00 - 12:00) :**
+    - **Quoi :** [Activité précise]
+    - **Pourquoi :** [L'argument "Atlas" unique]
+    - **Logistique :** [Prix & Durée]
+    - **Lien :** [Lien Google Maps]
 
-- 🏛️ **Après-midi :**
-    - **Activité :** [...]
-    - **Le "Pourquoi" :** [...]
-    - **Logistique :** [...]
-    - **Lien Pratique :** [...]
+- 🍽️ **Déjeuner (12:30) :**
+    - **Lieu :** [Nom du resto ou type de pique-nique]
+    - **Budget :** [Prix approx]
 
-- 🌙 **Soir :**
-    - **Activité :** [Dîner ET (si van_life='Oui') OÙ SE GARER POUR LA NUIT.]
-    - **Le "Pourquoi" :** [...]
-    - **Logistique :** [...]
-    - **Lien Pratique :** [...]
+- 🏛️ **Après-midi (14:30 - 18:00) :**
+    - **Quoi :** [Activité culturelle ou détente]
+    - **Pourquoi :** [Le détail qui tue]
+    - **Lien :** [Lien Google Maps]
 
-- 🎁 **Option Extra / Joyau Caché :**
-    - [Une activité "bonus" à proximité.]
+- 🌙 **Soirée & Nuit :**
+    - **Dîner :** [Resto ou cuisine locale]
+    - **Dodo :** [Adresse hôtel ou Spot Van précis avec coordonnées]
 
-- 💡 **Résumé de la Journée :**
-    - **Transport :** [Conseil global de transport (ex: "Prenez le Pass Métro Journée...").]
-    - **Budget Approx. :** [Estimation du total de la journée (activités + nourriture). Ex: "Total estimé (hors shopping) : 85€"]
-
-(Tu continues ce format pour TOUS les jours demandés.)
+- 💡 **Le Conseil d'Atlas :** [Une astuce transport ou "piège à touristes" à éviter ce jour-là]
 
 ---
-### 💰 RÉSUMÉ DU BUDGET (SUR PLACE)
-À la toute fin, crée un résumé du budget total.
-- **Budget Total Estimé (Sur Place) :** [Additionne TOUS les "Budget Approx." de chaque jour et donne le total.]
-- **Note Importante :** [Précise que ce total ESTIME les activités, la nourriture et les transports locaux, mais **EXCLUT** les vols internationaux/nationaux et le logement (sauf si van/camping).]
+(Répète pour chaque jour)
+---
+
+### 💰 ESTIMATION BUDGET (Sur place)
+Calcul approximatif (hors vols) pour tout le séjour : [Montant]
 """
 
 # --- 3. FONCTIONS TECHNIQUES ---
 
 def verify_lemonsqueezy_license(license_key):
-    """
-    Contacte l'API Lemon Squeezy pour valider une clé de licence.
-    """
-    if not license_key:
-        return False, "No license key provided."
-        
+    """Vérifie la licence payante."""
+    if not license_key: return False, "Clé manquante."
     try:
-        headers = {
-            'Accept': 'application/vnd.api+json',
-            'Content-Type': 'application/vnd.api+json',
-            'Authorization': f'Bearer {LEMON_API_KEY}'
-        }
-        data = { 'license_key': license_key.strip() }
-        response = requests.post(
-            f"https://api.lemonsqueezy.com/v1/licenses/validate",
-            headers=headers,
-            json=data
-        )
-        result = response.json()
-        
-        if response.status_code != 200:
-             return False, result.get("error", "API communication error.")
-             
-        if result.get("valid") == True:
-            instance = result.get("instance", {})
-            product_id = instance.get("product_id")
-            if str(product_id) == str(LEMON_PRODUCT_ID):
-                return True, "License key validated!"
-            else:
-                return False, "This key is valid, but for the wrong product."
-        else:
-            return False, result.get("error", "Invalid license key.")
-    except Exception as e:
-        return False, f"Error connecting to verification API: {e}"
+        headers = {'Accept': 'application/vnd.api+json', 'Authorization': f'Bearer {LEMON_API_KEY}'}
+        r = requests.post("https://api.lemonsqueezy.com/v1/licenses/validate", headers=headers, json={'license_key': license_key.strip()})
+        if r.status_code != 200: return False, "Erreur API."
+        res = r.json()
+        if res.get("valid") and str(res['instance']['product_id']) == str(LEMON_PRODUCT_ID):
+            return True, "Validé."
+        return False, "Clé invalide."
+    except: return False, "Erreur connexion."
 
 def extract_image_url(text):
-    """
-    Extrait le mot-clé de l'image du texte et retourne une URL Unsplash.
-    """
-    image_match = re.search(r'- 📷 \*\*Image :\*\* \[(.*?)\]', text)
-    if image_match:
-        image_keyword = image_match.group(1).strip().replace(" ", ",")
-        return f"https://source.unsplash.com/800x600/?{image_keyword}"
-    return None
+    """Trouve l'image dans le texte."""
+    m = re.search(r'- 📷 \*\*Image :\*\* \[(.*?)\]', text)
+    return f"https://source.unsplash.com/800x600/?{m.group(1).strip().replace(' ', ',')}" if m else None
 
-# --- 4. LA LOGIQUE DE GÉNÉRATION ---
-def generate_itinerary(
-    # NOUVEAUX CHAMPS AJOUTÉS
-    langue, destination, duree, budget, 
-    persons, children_under_11, arrival_point, van_life,
-    # (Champs existants)
-    interest_culture, interest_food, interest_art, interest_shopping,
-    interest_nature, interest_nightlife, interest_adventure, interest_relax,
-    additional_requests,
-    pace_relaxed, pace_moderate, pace_fast,
-    transport_public, transport_walk, accessibility_wheelchair,
-    specific_constraints,
-    license_key
-):
+# --- 4. CŒUR DU SYSTÈME ---
+def generate_itinerary(langue, destination, duree, budget, persons, children_count, arrival_point, van_life, 
+                       ic, ifood, iart, ishop, inat, inight, iadv, irelax, add_req, 
+                       prelax, pmod, pfast, tpub, twalk, acc_wheel, constr, license_key):
     
-    # 1. Collecte les INTÉRÊTS
-    interests_list = []
-    if interest_culture: interests_list.append("Culture & Museums")
-    if interest_food: interests_list.append("Local Gastronomy")
-    if interest_art: interests_list.append("Art & Monuments")
-    if interest_shopping: interests_list.append("Shopping")
-    if interest_nature: interests_list.append("Nature & Parks")
-    if interest_nightlife: interests_list.append("Nightlife")
-    if interest_adventure: interests_list.append("Adventure & Sports")
-    if interest_relax: interests_list.append("Relaxation")
+    # Construction des listes d'intérêts
+    interests = []
+    if ic: interests.append("Culture")
+    if ifood: interests.append("Gastronomie")
+    if iart: interests.append("Art")
+    if ishop: interests.append("Shopping")
+    if inat: interests.append("Nature")
+    if inight: interests.append("Vie Nocturne")
+    if iadv: interests.append("Aventure")
+    if irelax: interests.append("Détente")
+    final_interests = ", ".join(interests) + (f", {add_req}" if add_req else "")
     
-    final_interests_str = ", ".join(interests_list)
-    if additional_requests:
-        final_interests_str += f", {additional_requests}"
-    if not final_interests_str:
-        final_interests_str = "any"
+    logistics = []
+    if prelax: logistics.append("Relax")
+    if pmod: logistics.append("Modéré")
+    if pfast: logistics.append("Intense")
+    if tpub: logistics.append("Transports en commun")
+    if twalk: logistics.append("Marche")
+    if acc_wheel: logistics.append("Accès PMR")
+    final_logistics = ", ".join(logistics)
 
-    # 2. Collecte la LOGISTIQUE
-    logistics_list = []
-    if pace_relaxed: logistics_list.append("Relaxed pace")
-    if pace_moderate: logistics_list.append("Moderate pace")
-    if pace_fast: logistics_list.append("Fast pace")
-    if transport_public: logistics_list.append("Focus on public transport")
-    if transport_walk: logistics_list.append("Focus on walking")
-    if accessibility_wheelchair: logistics_list.append("Wheelchair accessible")
-    
-    final_logistics_str = ", ".join(logistics_list) if logistics_list else "None specified"
-    
-    # 3. Récupère les CONTRAINTES SPÉCIFIQUES
-    final_constraints_str = specific_constraints if specific_constraints else "None"
-
-    # 4. Gère la génération ou le déverrouillage
     try:
-        # L'API est configurée ICI, juste avant d'être utilisée.
+        # --- CONFIGURATION API AU MOMENT DU CLIC (Anti-Crash) ---
         genai.configure(api_key=GEMINI_API_KEY)
-
-        # Appelle Gemini pour générer le contenu
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        prompt_final = PROMPT_MAITRE.format(
-            destination=destination,
-            duree=duree,
-            persons=persons,
-            children_under_11=children_under_11,
-            arrival_point=arrival_point if arrival_point else "Non spécifié",
-            van_life="Oui" if van_life else "Non",
-            budget=budget,
-            interets=final_interests_str,
-            logistics=final_logistics_str,
-            specific_constraints=final_constraints_str,
-            langue=langue
-        )
-        response = model.generate_content(prompt_final)
-        full_itinerary = response.text
         
-        # Sépare le Jour 1 du reste
-        jours = re.split(r'(### JOUR 2 :.*)', full_itinerary, 1, re.DOTALL)
-        jour_1_text = jours[0].strip()
-        jour_1_image_url = extract_image_url(jour_1_text)
-
-        # 5. Logique de Paywall
+        # --- UTILISATION DE GEMINI 1.5 PRO ---
+        model = genai.GenerativeModel('gemini-1.5-pro') 
+        
+        prompt = PROMPT_MAITRE.format(
+            destination=destination, duree=duree, persons=persons, children_count=children_count,
+            arrival_point=arrival_point or "Non précisé", van_life="Oui" if van_life else "Non",
+            budget=budget, interets=final_interests or "Général", logistics=final_logistics,
+            specific_constraints=constr or "Aucune", langue=langue
+        )
+        
+        response = model.generate_content(prompt)
+        full_text = response.text
+        
+        # Découpage du texte
+        splits = re.split(r'(### JOUR 2 :.*)', full_text, 1, re.DOTALL)
+        day1 = splits[0].strip()
+        img_url = extract_image_url(day1)
+        
+        # Logique Paywall
         if not license_key:
-            # PAS de clé : Montre l'aperçu gratuit
-            return (
-                jour_1_text, 
-                jour_1_image_url, 
-                gr.Column(visible=True), 
-                gr.Column(visible=False)
-            )
+            return day1, img_url, gr.Column(visible=True), gr.Column(visible=False)
+        
+        is_valid, msg = verify_lemonsqueezy_license(license_key)
+        if is_valid:
+            # On nettoie le texte pour afficher la suite
+            rest = splits[1] if len(splits) > 1 else "Fin de l'itinéraire."
+            return day1.split("### JOUR 2")[0], img_url, gr.Column(visible=False), gr.Column(visible=True, value=rest)
         else:
-            # L'utilisateur a entré une clé
-            is_valid, message = verify_lemonsqueezy_license(license_key)
-            
-            if is_valid:
-                # Clé VALIDE : Montre tout
-                parts = re.split(r'(### 💰 RÉSUMÉ DU BUDGET.*)', full_itinerary, 1, re.DOTALL)
-                itinerary_part = parts[0].strip()
-                budget_summary = parts[1] if len(parts) > 1 else "Budget non calculé."
-                jours_2_plus_match = re.search(r'(### JOUR 2 :.*)', itinerary_part, re.DOTALL)
-                reste_itinerary = jours_2_plus_match.group(1) if jours_2_plus_match else "Aucun jour supplémentaire trouvé."
-                full_itinerary_content = reste_itinerary + "\n\n" + budget_summary
-
-                return (
-                    jour_1_text.split("### JOUR 2 :")[0].strip(),
-                    jour_1_image_url,
-                    gr.Column(visible=False), 
-                    gr.Column(visible=True, value=full_itinerary_content)
-                )
-            else:
-                # Clé INVALIDE : Montre l'aperçu + erreur
-                return (
-                    jour_1_text,
-                    jour_1_image_url,
-                    gr.Column(visible=True, value=f"Erreur de clé: {message}"), 
-                    gr.Column(visible=False)
-                )
+            return day1, img_url, gr.Column(visible=True, value=f"⚠️ {msg}"), gr.Column(visible=False)
 
     except Exception as e:
-        # --- CORRIGÉ : Bloc de DÉBOGAGE ---
-        # Affiche un message clair au lieu de crasher l'interface
-        key_value = os.environ.get("GEMINI_API_KEY")
-        
-        debug_message = ""
-        if key_value:
-            debug_message = "Erreur: La clé API existe mais est INVALIDE. Vérifiez la valeur de votre clé Gemini sur Render."
+        err = str(e).upper()
+        if "API_KEY" in err or "NOT FOUND" in err:
+            debug_msg = "ERREUR CRITIQUE : La clé GEMINI_API_KEY est introuvable sur Render. Vérifiez vos Variables d'Environnement."
         else:
-            debug_message = "Erreur: GEMINI_API_KEY est INTROUVABLE ou VIDE. Vérifiez vos variables d'environnement sur Render. Assurez-vous que le nom de la clé est exact."
-        
-        # Renvoie le message de débogage à l'utilisateur dans la boîte de sortie
-        return debug_message, None, gr.Column(visible=False), gr.Column(visible=False)
+            debug_msg = f"Erreur technique : {e}"
+        return debug_msg, None, gr.Column(visible=False), gr.Column(visible=False)
 
-
-# --- 5. L'INTERFACE UTILISATEUR (CORRIGÉE AVEC gr.Group) ---
-with gr.Blocks(theme=gr.themes.Monochrome(primary_hue="indigo", secondary_hue="blue"), css="footer {display: none !important}") as demo:
-    
-    gr.Markdown("# 🔑 The Atlas Agency\n*Votre itinéraire sur mesure, généré par IA.*")
+# --- 5. INTERFACE ---
+with gr.Blocks(theme=gr.themes.Monochrome(), css="footer {display:none}") as demo:
+    gr.Markdown("# 🌍 The Atlas Agency (v3.1)\n*Propulsé par Gemini 1.5 Pro*")
     
     with gr.Row():
-        # --- COLONNE 1 : LE FORMULAIRE ---
         with gr.Column(scale=1):
-            gr.Markdown("### 1. Remplissez le formulaire")
+            with gr.Accordion("Voyage", open=True):
+                langue = gr.Dropdown(["Français", "English", "Español"], label="Langue", value="Français")
+                dest = gr.Textbox(label="Destination", placeholder="Ex: Tokyo, Japon")
+                arrivee = gr.Textbox(label="Arrivée (Aéroport/Gare)")
+                duree = gr.Slider(1, 30, 7, 1, label="Jours")
+                
+                with gr.Row():
+                    adultes = gr.Number(label="Adultes", value=2, precision=0)
+                    # MODIFICATION ICI : Nombre d'enfants au lieu de Oui/Non
+                    enfants = gr.Number(label="Enfants (-11 ans)", value=0, precision=0)
+                
+                budget = gr.Radio(["Eco", "Standard", "Luxe"], label="Budget", value="Standard")
             
-            with gr.Accordion("Détails principaux", open=True):
-                langue = gr.Dropdown(["English", "Français", "Español", "Deutsch", "Italiano", "Português", "日本語", "中文"], label="Langue de l'itinéraire", value="English")
-                destination = gr.Textbox(label="Destination", placeholder="Ex: Tokyo, Japan")
-                arrival_point = gr.Textbox(label="Point d'arrivée (Aéroport, Gare...)", placeholder="Ex: Aéroport de Tokyo-Narita (NRT)")
-                duree = gr.Slider(1, 30, value=7, step=1, label="Nombre de jours")
-                persons = gr.Number(label="Nombre de voyageurs (adultes)", value=2, precision=0)
-                children_under_11 = gr.Radio(["Oui", "Non"], label="Enfants de moins de 11 ans ?", value="Non")
-                budget = gr.Radio(["Economic", "Mid-range", "Luxury"], label="Budget (Général)", value="Mid-range")
+            with gr.Accordion("Préférences", open=False):
+                van = gr.Checkbox(label="🚐 Voyage en Van")
+                # MODIFICATION ICI : Labels explicites pour corriger l'affichage
+                with gr.Row(): 
+                    c_cult = gr.Checkbox(label="🏛️ Culture")
+                    c_food = gr.Checkbox(label="🍜 Gastronomie")
+                with gr.Row():
+                    c_art = gr.Checkbox(label="🎨 Art")
+                    c_shop = gr.Checkbox(label="🛍️ Shopping")
+                with gr.Row():
+                    c_nat = gr.Checkbox(label="🌲 Nature")
+                    c_night = gr.Checkbox(label="💃 Sorties")
+                with gr.Row():
+                    c_sport = gr.Checkbox(label="🏅 Sport")
+                    c_relax = gr.Checkbox(label="🏖️ Détente")
+                autre = gr.Textbox(label="Autre envie ?")
             
-            with gr.Accordion("Intérêts (Ce que vous voulez faire)", open=False):
+            with gr.Accordion("Rythme", open=False):
                 with gr.Row():
-                    interest_culture = gr.Checkbox("🏛️ Culture & Museums")
-                    interest_food = gr.Checkbox("🍜 Local Gastronomy")
+                    p_cool = gr.Checkbox(label="🧘 Cool")
+                    p_moy = gr.Checkbox(label="🏃 Modéré")
+                    p_speed = gr.Checkbox(label="⚡ Intense")
                 with gr.Row():
-                    interest_art = gr.Checkbox("🎨 Art & Monuments")
-                    interest_shopping = gr.Checkbox("🛍️ Shopping")
-                with gr.Row():
-                    interest_nature = gr.Checkbox("🌲 Nature & Parks")
-                    interest_nightlife = gr.Checkbox("🌙 Nightlife")
-                with gr.Row():
-                    interest_adventure = gr.Checkbox("🚵 Adventure & Sports")
-                    interest_relax = gr.Checkbox("🏖️ Relaxation")
-                additional_requests = gr.Textbox(label="Intérêts Spécifiques / Incontournables", placeholder="Ex: Je dois voir le musée 'XYZ'...")
+                    t_pub = gr.Checkbox(label="🚇 Transports publics")
+                    t_pied = gr.Checkbox(label="🚶 Marche")
+                pmr = gr.Checkbox(label="♿ Accès PMR")
+                constr = gr.Textbox(label="Contraintes (Allergies...)")
 
-            with gr.Accordion("Logistique & Rythme (Comment vous voyagez)", open=False):
-                van_life = gr.Checkbox("🚐 Voyage en Van / Camping-car")
-                with gr.Row():
-                    pace_relaxed = gr.Checkbox("🧘 Relaxed")
-                    pace_moderate = gr.Checkbox("🏃 Moderate")
-                    pace_fast = gr.Checkbox("⚡ Fast-Paced")
-                with gr.Row():
-                    transport_public = gr.Checkbox("🚇 Public Transport")
-                    transport_walk = gr.Checkbox("🚶 Walking")
-                accessibility_wheelchair = gr.Checkbox("♿ Wheelchair Accessible")
-                specific_constraints = gr.Textbox(label="Contraintes Spécifiques (Allergies, Budget max...)", placeholder="Ex: Allergie aux cacahuètes, max 50€/jour...")
+            btn = gr.Button("🚀 Générer l'itinéraire", variant="primary")
 
-            generate_btn = gr.Button("Générer mon aperçu gratuit", variant="primary")
-
-        # --- COLONNE 2 : LES RÉSULTATS ---
         with gr.Column(scale=2):
-            gr.Markdown("### 2. Votre Itinéraire")
-            
             with gr.Group():
-                gr.Markdown("#### ✨ Aperçu Gratuit (Jour 1)")
-                jour_1_output = gr.Markdown("Remplissez le formulaire et cliquez sur 'Générer' pour voir votre Jour 1 ici.")
-                jour_1_image = gr.Image(label="Inspiration Visuelle", type="filepath")
+                res_j1 = gr.Markdown("### Votre voyage commence ici...")
+                img_j1 = gr.Image(show_label=False, height=300)
             
-            with gr.Column(visible=False) as unlock_box:
-                gr.Markdown("--- \n ### 🔒 Déverrouillez la suite !")
-                gr.Markdown("Vous aimez cet aperçu ? Obtenez l'itinéraire complet pour **9,99€**.")
-                
-                gr.Markdown("[1. Achetez votre Clé de Licence Unique ici](https://theatlas.lemonsqueezy.com/buy/02e6f077-25c7-4d31-81d6-258588ff2ca4)")
-                
-                license_key_input = gr.Textbox(label="2. Collez votre clé de licence ici", placeholder="Ex: XXXX-XXXX-XXXX-XXXX", interactive=True)
-                unlock_btn = gr.Button("Déverrouiller l'itinéraire complet")
+            with gr.Column(visible=False) as box_lock:
+                gr.Markdown("### 🔒 Version Complète")
+                gr.Markdown("Débloquez la suite pour **9.99€**.")
+                # LIEN LEMON SQUEEZY
+                gr.Markdown("[Acheter ma licence](https://theatlas.lemonsqueezy.com/buy/02e6f077-25c7-4d31-81d6-258588ff2ca4)")
+                key_input = gr.Textbox(label="Clé de licence")
+                btn_unlock = gr.Button("Déverrouiller")
+            
+            with gr.Column(visible=False) as box_full:
+                res_full = gr.Markdown()
 
-            with gr.Column(visible=False) as full_itinerary_box:
-                gr.Markdown("--- \n ### 🔑 Votre Itinéraire Complet (Jours 2+ et Résumé)")
-                full_itinerary_output = gr.Markdown()
-
-    # --- Connexions des Boutons ---
-    all_inputs = [
-        langue, destination, duree, budget, 
-        persons, children_under_11, arrival_point, van_life,
-        interest_culture, interest_food, interest_art, interest_shopping,
-        interest_nature, interest_nightlife, interest_adventure, interest_relax,
-        additional_requests,
-        pace_relaxed, pace_moderate, pace_fast,
-        transport_public, transport_walk, accessibility_wheelchair,
-        specific_constraints,
-        license_key_input
-    ]
+    inputs = [langue, dest, duree, budget, adultes, enfants, arrivee, van, 
+              c_cult, c_food, c_art, c_shop, c_nat, c_night, c_sport, c_relax, autre,
+              p_cool, p_moy, p_speed, t_pub, t_pied, pmr, constr, key_input]
     
-    generate_btn.click(
-        fn=generate_itinerary,
-        inputs=all_inputs,
-        outputs=[jour_1_output, jour_1_image, unlock_box, full_itinerary_box]
-    )
-    
-    unlock_btn.click(
-        fn=generate_itinerary,
-        inputs=all_inputs,
-        outputs=[jour_1_output, jour_1_image, unlock_box, full_itinerary_box]
-    )
+    btn.click(generate_itinerary, inputs, [res_j1, img_j1, box_lock, box_full])
+    btn_unlock.click(generate_itinerary, inputs, [res_j1, img_j1, box_lock, box_full])
 
-# --- 6. Lancer l'application ---
-#render fournit le port via la variable d'environnement PORT
-#Nous utilisions 7860 comme valeur par défaut si nous l'exécutons localement
-server_port = int(os.environ.get("PORT", 7860))
-
-# 'serveur_port' (français) remplacé par 'server_port' (anglais) + share=True
-demo.launch(server_name="0.0.0.0", server_port=server_port, share=True)
+# LANCEMENT
+port = int(os.environ.get("PORT", 7860))
+demo.launch(server_name="0.0.0.0", server_port=port, share=True)
